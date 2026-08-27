@@ -1,0 +1,56 @@
+# A tripwire, not a test of a change.
+#
+# `publishable`'s `pyarrow` resource is pinned to Homebrew's `apache-arrow`
+# version, because the Python binding and Arrow C++ must match. When
+# homebrew-core bumps `apache-arrow`, nothing in this tap changes and nothing
+# here fires — so without this workflow the first person to learn the pairing
+# has broken is a user running `brew install`.
+#
+# This deliberately does NOT extend `tests.yml`. That workflow's build step,
+# `brew test-bot --only-formulae`, is gated on `github.event_name ==
+# 'pull_request'`, so adding a `schedule:` trigger there would have run
+# cleanup, setup and tap-syntax and gone green without compiling anything —
+# a check that cannot fail for the thing it exists to catch.
+#
+# It taps from GitHub rather than from the checkout, so what it builds is what
+# a user gets. macOS only: that is the only platform this formula has been
+# verified on, and a red run here should mean the pairing broke, not that a
+# platform nobody has tested is untested.
+name: formula still builds
+
+on:
+  schedule:
+    - cron: "25 7 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash -xeuo pipefail {0}
+
+jobs:
+  build:
+    runs-on: macos-26
+    permissions:
+      contents: read
+    steps:
+      - name: Set up Homebrew
+        uses: Homebrew/actions/setup-homebrew@a657b8b0cd35d0f65cce41fce9b24cf054b49869 # 2026.08.24.1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tap
+        run: brew tap seouri/tap
+
+      - name: Build from source
+        run: brew install --build-from-source seouri/tap/publishable
+
+      - name: Run the formula's own test block
+        run: brew test seouri/tap/publishable
+
+      - name: Report the pairing that this exists to watch
+        run: |
+          brew list --versions apache-arrow
+          "$(brew --prefix)/Cellar/publishable/0.1.0/libexec/bin/python" \
+            -c 'import pyarrow; print("pyarrow", pyarrow.__version__)'
